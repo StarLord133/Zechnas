@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { AppSidebar } from "@/components/app-sidebar"
 import {
@@ -14,8 +13,10 @@ import {
     SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { FileText, Download, DollarSign, Activity, FileSpreadsheet } from "lucide-react";
-import { motion } from "framer-motion";
+import { DollarSign, Activity, FileSpreadsheet } from "lucide-react";
+
+import { XMLAccountingTable } from "@/components/XMLAccountingTable";
+import { TeamManagement } from "@/components/TeamManagement";
 
 // --- Mock Data ---
 const FINANCIAL_DATA = [
@@ -33,12 +34,6 @@ const CLIENTS_DATA = [
     { id: "CL-003", name: "Solaris Energy", status: "Al día", advisor: "L. Méndez" },
     { id: "CL-004", name: "Apex Logistics", status: "Auditoría", advisor: "R. Castro" },
     { id: "CL-005", name: "Quantum Systems", status: "Al día", advisor: "A. Silva" },
-];
-
-const XML_DATA_MOCK = [
-    { uuid: "123e4567-e89b", rfc: "XAXX010101000", total: "$4,500.00", date: "2024-12-01" },
-    { uuid: "123e4567-abba", rfc: "XAXX010101000", total: "$1,200.00", date: "2024-12-05" },
-    { uuid: "123e4567-beef", rfc: "XAXX010101000", total: "$12,450.00", date: "2024-12-10" },
 ];
 
 // --- Components ---
@@ -122,75 +117,19 @@ const ViewClients = () => (
     </div>
 );
 
-const ViewBilling = () => {
-    const [loading, setLoading] = useState(false);
-    const [data, setData] = useState<any[]>([]);
 
-    const handleDrop = (e: any) => {
-        e.preventDefault();
-        setLoading(true);
-        // Simulate parsing
-        setTimeout(() => {
-            setData(XML_DATA_MOCK);
-            setLoading(false);
-        }, 1500);
-    };
 
-    return (
-        <div className="space-y-6 animate-in fade-in duration-500">
-            <div
-                className="border-2 border-dashed border-white/20 rounded-lg p-10 text-center hover:border-[#D4AF37] hover:bg-[#D4AF37]/5 transition-all cursor-pointer"
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={handleDrop}
-                onClick={handleDrop} // For demo purposes
-            >
-                <FileText className="w-10 h-10 text-white/30 mx-auto mb-4" />
-                <p className="text-white font-medium">Arrastra tus archivos XML aquí</p>
-                <p className="text-white/40 text-sm mt-2">o haz clic para seleccionar (Simulado)</p>
-            </div>
+const ViewBilling = () => (
+    <div className="space-y-6 animate-in fade-in duration-500">
+        <XMLAccountingTable />
+    </div>
+);
 
-            {loading && (
-                <div className="text-center py-10">
-                    <div className="animate-spin w-8 h-8 border-2 border-[#D4AF37] border-t-transparent rounded-full mx-auto mb-4" />
-                    <p className="text-white/50 animate-pulse">Procesando estructura fiscal...</p>
-                </div>
-            )}
-
-            {data.length > 0 && !loading && (
-                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-                    <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-white font-bold">Resumen de Facturas Importadas</h3>
-                        <button className="flex items-center gap-2 px-4 py-2 bg-[#D4AF37] text-black text-sm font-bold rounded hover:bg-[#b5952f] transition-colors">
-                            <Download className="w-4 h-4" /> Exportar PDF
-                        </button>
-                    </div>
-                    <div className="rounded-md border border-white/10 overflow-hidden">
-                        <table className="w-full text-sm text-left">
-                            <thead className="bg-[#D4AF37]/10 text-[#D4AF37] font-medium">
-                                <tr>
-                                    <th className="p-3">UUID</th>
-                                    <th className="p-3">RFC Emisor</th>
-                                    <th className="p-3">Fecha</th>
-                                    <th className="p-3 text-right">Total</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-white/5">
-                                {data.map((item) => (
-                                    <tr key={item.uuid} className="hover:bg-white/5">
-                                        <td className="p-3 text-white/70 font-mono text-xs">{item.uuid}</td>
-                                        <td className="p-3 text-white">{item.rfc}</td>
-                                        <td className="p-3 text-white/70">{item.date}</td>
-                                        <td className="p-3 text-right text-white font-bold">{item.total}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </motion.div>
-            )}
-        </div>
-    );
-}
+const ViewTeam = () => (
+    <div className="space-y-6 animate-in fade-in duration-500">
+        <TeamManagement />
+    </div>
+);
 
 
 export default function Dashboard() {
@@ -233,7 +172,8 @@ export default function Dashboard() {
                     {viewParam === 'dashboard' && <ViewDashboard />}
                     {viewParam === 'clients' && <ViewClients />}
                     {viewParam === 'billing' && <ViewBilling />}
-                    {(viewParam === 'team' || viewParam === 'settings') && (
+                    {viewParam === 'team' && <ViewTeam />}
+                    {(viewParam === 'settings') && (
                         <div className="flex items-center justify-center h-64 border border-dashed border-white/10 rounded-lg text-white/30">
                             Módulo de {currentViewTitle}: En desarrollo
                         </div>
