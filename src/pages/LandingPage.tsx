@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
 import { motion, useScroll, useTransform, useSpring } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import { Star } from 'lucide-react';
 
 const THEME = {
     black: "#000000",
@@ -59,8 +60,38 @@ const TexturedBackground = () => (
     </div>
 )
 
-const Hero = () => {
+const FloatingHeader = () => {
     const navigate = useNavigate();
+    const [scrolled, setScrolled] = useState(false);
+
+    useEffect(() => {
+        const handleScroll = () => setScrolled(window.scrollY > 50);
+        window.addEventListener('scroll', handleScroll);
+        return () => window.removeEventListener('scroll', handleScroll);
+    }, []);
+
+    return (
+        <motion.header
+            initial={{ y: -100 }}
+            animate={{ y: 0 }}
+            className={`fixed top-0 left-0 w-full z-50 transition-all duration-300 ${scrolled ? 'bg-black/80 backdrop-blur-md border-b border-white/10 py-4' : 'bg-transparent py-6'}`}
+        >
+            <div className="max-w-7xl mx-auto px-6 md:px-20 flex justify-between items-center">
+                <div className="text-xl font-bold tracking-tighter text-white">
+                    ZECHNAS<span className="text-[#D4AF37]">.</span>
+                </div>
+                <button
+                    onClick={() => navigate('/dashboard')}
+                    className="px-6 py-2 bg-white/5 border border-white/10 hover:border-[#D4AF37] hover:bg-[#D4AF37] hover:text-black transition-all duration-300 text-xs uppercase tracking-widest text-[#D4AF37] rounded-sm"
+                >
+                    Dashboard
+                </button>
+            </div>
+        </motion.header>
+    );
+};
+
+const Hero = () => {
     // Smooth scroll parallax for hero content
     const { scrollY } = useScroll();
     const y1 = useTransform(scrollY, [0, 500], [0, 200]);
@@ -89,26 +120,35 @@ const Hero = () => {
             </motion.div>
 
             <motion.div
-                className="z-10 text-center select-none"
+                className="z-10 text-center select-none flex flex-col items-center gap-6"
                 style={{ y: y1, opacity }}
             >
-                <h1 className="text-6xl md:text-9xl font-bold tracking-tighter mb-6" style={{ color: THEME.white }}>
-                    ZECHNAS
-                </h1>
-                <div className="text-2xl md:text-4xl font-light tracking-widest uppercase">
-                    <Typewriter />
+                {/* Confidence Badge */}
+                <div className="px-4 py-1.5 rounded-full border border-[#D4AF37]/30 bg-[#D4AF37]/10 backdrop-blur-md mb-2">
+                    <span className="text-[#D4AF37] text-xs uppercase tracking-[0.2em] font-medium">Somos tus contadores de confianza</span>
+                </div>
+
+                <div>
+                    <h1 className="text-6xl md:text-9xl font-bold tracking-tighter mb-4" style={{ color: THEME.white }}>
+                        ZECHNAS
+                    </h1>
+                    <div className="text-2xl md:text-4xl font-light tracking-widest uppercase">
+                        <Typewriter />
+                    </div>
+                </div>
+
+                {/* Social Proof */}
+                <div className="mt-8 flex flex-col items-center gap-2">
+                    <div className="flex gap-1">
+                        {[1, 2, 3, 4, 5].map((_, i) => (
+                            <Star key={i} className="w-4 h-4 fill-[#D4AF37] text-[#D4AF37]" />
+                        ))}
+                    </div>
+                    <p className="text-white/60 text-sm font-light">
+                        <span className="text-white font-medium">500+ Empresas</span> confían en nuestros análisis
+                    </p>
                 </div>
             </motion.div>
-
-            <motion.button
-                onClick={() => navigate('/dashboard')}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 1, duration: 0.8 }}
-                className="mt-12 px-8 py-3 bg-transparent border border-[#cca935] text-[#cca935] hover:bg-[#cca935] hover:text-black transition-all duration-300 tracking-widest uppercase text-sm z-20"
-            >
-                Dashboard Access
-            </motion.button>
 
             <motion.div
                 className="absolute bottom-10 left-1/2 -translate-x-1/2 text-white/20 text-sm animate-bounce"
@@ -409,6 +449,7 @@ export default function LandingPage() {
     return (
         <div className="bg-black w-full overflow-x-hidden selection:bg-[#D4AF37] selection:text-black relative">
             <TexturedBackground />
+            <FloatingHeader />
             <Hero />
             <About />
             <Specialization />

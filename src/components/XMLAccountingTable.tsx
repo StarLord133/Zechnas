@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react"
 import { XMLParser } from "fast-xml-parser"
-import { Upload, FileBarChart, Eye, Download, ArrowLeft, Printer } from "lucide-react"
+import { Upload, FileBarChart, Eye, Download, ArrowLeft, Printer, DollarSign, Activity, Calendar } from "lucide-react"
 import {
     Table,
     TableBody,
@@ -11,11 +11,28 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table"
-import { Card } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+
+// --- Mock Data ---
+const HISTORY_DATA = [
+    { month: 'Jul', uploaded: 45000, processed: 42000 },
+    { month: 'Ago', uploaded: 52000, processed: 48000 },
+    { month: 'Sep', uploaded: 48000, processed: 48000 },
+    { month: 'Oct', uploaded: 61000, processed: 58000 },
+    { month: 'Nov', uploaded: 55000, processed: 65000 },
+    { month: 'Dic', uploaded: 75000, processed: 72000 },
+];
+
+const BILLING_KPIS = [
+    { label: "Total Procesado (Mes)", value: "$764,230", trend: "+12.5%", icon: DollarSign, color: "text-[#D4AF37]" },
+    { label: "Facturas Pendientes", value: "23", trend: "-5 vs mes anterior", icon: Activity, color: "text-blue-400" },
+    { label: "Próximo Cierre Fiscal", value: "17 Ene", trend: "3 días restantes", icon: Calendar, color: "text-white/60" },
+];
 
 interface InvoiceData {
-    uuid: string // Not always in standard fields, but we'll try to generate or find it
+    uuid: string
     date: string
     serie: string
     folio: string
@@ -191,8 +208,60 @@ function InvoiceDetail({ invoice, onBack }: { invoice: InvoiceData, onBack: () =
     )
 }
 
+// --- Mock Invoice Generator ---
+const generateRandomInvoices = (count: number): InvoiceData[] => {
+    const issuers = [
+        { name: "OFFICE DEPOT DE MEXICO", rfc: "ODM950324V2A" },
+        { name: "TELEFONOS DE MEXICO", rfc: "TME840315KT6" },
+        { name: "AMAZON WEB SERVICES", rfc: "AWS120324V1A" },
+        { name: "AEROLINEAS DE MEXICO", rfc: "AME880912I89" },
+        { name: "UBER BV", rfc: "UBR120324V9A" },
+        { name: "STARBUCKS COFFEE", rfc: "SCM020324V5A" }
+    ];
+
+    const concepts = [
+        "PAPELERIA Y ARTICULOS DE OFICINA",
+        "SERVICIOS DE TELECOMUNICACIONES",
+        "SERVICIOS EN LA NUBE AWS",
+        "TRANSPORTE AEREO DE PASAJEROS",
+        "SERVICIO DE TRANSPORTE PRIVADO",
+        "CONSUMO DE ALIMENTOS Y BEBIDAS",
+        "HONORARIOS PROFESIONALES",
+        "MANTENIMIENTO DE EQUIPO DE COMPUTO"
+    ];
+
+    return Array.from({ length: count }).map(() => {
+        const issuer = issuers[Math.floor(Math.random() * issuers.length)];
+        const subtotal = Math.floor(Math.random() * 15000) + 500;
+        const tax = subtotal * 0.16;
+        const total = subtotal + tax;
+
+        // Random date within last 3 months
+        const date = new Date();
+        date.setDate(date.getDate() - Math.floor(Math.random() * 90));
+
+        return {
+            uuid: crypto.randomUUID(),
+            date: date.toISOString().split('T')[0],
+            serie: "F",
+            folio: `${Math.floor(Math.random() * 10000) + 1000}`,
+            rfcEmitter: issuer.rfc,
+            nameEmitter: issuer.name,
+            concept: concepts[Math.floor(Math.random() * concepts.length)],
+            subtotal: subtotal,
+            discount: 0,
+            transferredTax: tax,
+            retainedTax: 0,
+            total: total,
+            rawData: null // No raw XML for mock data
+        };
+    });
+};
+
+const INITIAL_INVOICES = generateRandomInvoices(15);
+
 export function XMLAccountingTable() {
-    const [invoices, setInvoices] = useState<InvoiceData[]>([])
+    const [invoices, setInvoices] = useState<InvoiceData[]>(INITIAL_INVOICES)
     const [isDragging, setIsDragging] = useState(false)
     const [processing, setProcessing] = useState(false)
     const [selectedInvoice, setSelectedInvoice] = useState<InvoiceData | null>(null)
@@ -264,7 +333,7 @@ export function XMLAccountingTable() {
             }
         }
 
-        setInvoices(prev => [...prev, ...newInvoices])
+        setInvoices(prev => [...newInvoices, ...prev])
         setProcessing(false)
     }
 
@@ -298,44 +367,89 @@ export function XMLAccountingTable() {
 
     return (
         <div className="space-y-6 w-full animate-in fade-in duration-300">
-            {/* Dropzone */}
-            <div
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                className={`
-                    relative group border-2 border-dashed rounded-lg p-8 transition-all duration-300 ease-in-out cursor-pointer
-                    flex flex-col items-center justify-center gap-4
-                    ${isDragging
-                        ? "border-[#D4AF37] bg-[#D4AF37]/10"
-                        : "border-white/10 hover:border-[#D4AF37]/50 hover:bg-white/5"
-                    }
-                `}
-            >
-                <input
-                    type="file"
-                    multiple
-                    accept=".xml"
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    onChange={handleFileInput}
-                />
+            {/* KPIs */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {BILLING_KPIS.map((kpi, index) => (
+                    <Card key={index} className="bg-[#0a0a0a] border border-white/10">
+                        <CardContent className="p-6 flex justify-between items-start">
+                            <div>
+                                <p className="text-white/40 text-xs uppercase font-bold tracking-wider">{kpi.label}</p>
+                                <h3 className="text-2xl font-bold text-white mt-1">{kpi.value}</h3>
+                                <p className="text-xs text-white/30 mt-1">{kpi.trend}</p>
+                            </div>
+                            <div className={`p-2 rounded bg-white/5 ${kpi.color}`}>
+                                <kpi.icon className="w-5 h-5" />
+                            </div>
+                        </CardContent>
+                    </Card>
+                ))}
+            </div>
 
-                <div className="p-4 rounded-full bg-white/5 group-hover:bg-[#D4AF37]/20 transition-colors">
-                    <Upload className={`w-8 h-8 ${isDragging ? "text-[#D4AF37]" : "text-white/50 group-hover:text-[#D4AF37]"}`} />
+            {/* Split View: Dropzone & Chart */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Dropzone */}
+                <div className="lg:col-span-1">
+                    <div
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                        className={`
+                            h-full min-h-[300px] relative group border-2 border-dashed rounded-lg p-8 transition-all duration-300 ease-in-out cursor-pointer
+                            flex flex-col items-center justify-center gap-4
+                            ${isDragging
+                                ? "border-[#D4AF37] bg-[#D4AF37]/10"
+                                : "border-white/10 hover:border-[#D4AF37]/50 hover:bg-white/5"
+                            }
+                        `}
+                    >
+                        <input
+                            type="file"
+                            multiple
+                            accept=".xml"
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            onChange={handleFileInput}
+                        />
+
+                        <div className="p-4 rounded-full bg-white/5 group-hover:bg-[#D4AF37]/20 transition-colors">
+                            <Upload className={`w-8 h-8 ${isDragging ? "text-[#D4AF37]" : "text-white/50 group-hover:text-[#D4AF37]"}`} />
+                        </div>
+                        <div className="text-center">
+                            <h3 className="text-lg font-medium text-white group-hover:text-[#D4AF37] transition-colors">
+                                Arrastra tus Facturas XML
+                            </h3>
+                            <p className="text-xs text-white/40 mt-1">
+                                Procesamiento automático de validación SAT.
+                            </p>
+                        </div>
+                        {processing && <p className="text-[#D4AF37] text-xs animate-pulse">Procesando archivos...</p>}
+                    </div>
                 </div>
-                <div className="text-center">
-                    <h3 className="text-lg font-medium text-white group-hover:text-[#D4AF37] transition-colors">
-                        Drop XML Files Here
-                    </h3>
-                    <p className="text-xs text-white/40 mt-1">
-                        Drag and drop your CFDI invoices or click to browse
-                    </p>
-                </div>
-                {processing && <p className="text-[#D4AF37] text-xs animate-pulse">Procesando archivos...</p>}
+
+                {/* Chart */}
+                <Card className="lg:col-span-2 bg-[#0a0a0a] border border-white/10 flex flex-col justify-center">
+                    <CardHeader>
+                        <CardTitle className="text-white text-sm uppercase tracking-widest">Flujo de Facturación (Semestral)</CardTitle>
+                    </CardHeader>
+                    <CardContent className="h-[250px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={HISTORY_DATA}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
+                                <XAxis dataKey="month" stroke="#666" fontSize={12} tickLine={false} axisLine={false} />
+                                <YAxis stroke="#666" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `$${value / 1000}k`} />
+                                <Tooltip
+                                    contentStyle={{ backgroundColor: '#000', border: '1px solid #333', borderRadius: '4px', color: '#fff' }}
+                                    cursor={{ fill: 'rgba(212, 175, 55, 0.1)' }}
+                                />
+                                <Bar dataKey="uploaded" name="Cargado" fill="#D4AF37" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                                <Bar dataKey="processed" name="Procesado" fill="#333" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </CardContent>
+                </Card>
             </div>
 
             {/* Accounting Table */}
-            {invoices.length > 0 && (
+            {invoices.length > 0 ? (
                 <Card className="bg-black border border-white/10 shadow-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
                     <div className="p-4 border-b border-white/10 flex justify-between items-center bg-[#0a0a0a]">
                         <div className="flex items-center gap-2">
@@ -399,7 +513,7 @@ export function XMLAccountingTable() {
                         </Table>
                     </div>
                 </Card>
-            )}
+            ) : null}
         </div>
     )
 }

@@ -12,7 +12,10 @@ import {
     ArrowLeft,
     Phone,
     MapPin,
-    Briefcase
+    Briefcase,
+    Users,
+    UserCheck,
+    Clock
 } from "lucide-react"
 
 import {
@@ -44,7 +47,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Card } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 
 // --- Types ---
@@ -395,6 +398,42 @@ export function TeamManagement() {
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>
+            </div>
+
+            {/* KPI Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <Card className="bg-[#0a0a0a] border border-white/10">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium text-white/50 uppercase tracking-wider">Total Miembros</CardTitle>
+                        <Users className="h-4 w-4 text-[#D4AF37]" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold text-white">{team.length}</div>
+                        <p className="text-xs text-white/40 mt-1">+1 esta semana</p>
+                    </CardContent>
+                </Card>
+                <Card className="bg-[#0a0a0a] border border-white/10">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium text-white/50 uppercase tracking-wider">Miembros Activos</CardTitle>
+                        <UserCheck className="h-4 w-4 text-green-400" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold text-white">{team.filter(m => m.status === 'Activo').length}</div>
+                        <p className="text-xs text-white/40 mt-1">
+                            {Math.round((team.filter(m => m.status === 'Activo').length / team.length) * 100)}% de operatividad
+                        </p>
+                    </CardContent>
+                </Card>
+                <Card className="bg-[#0a0a0a] border border-white/10">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium text-white/50 uppercase tracking-wider">Pendientes</CardTitle>
+                        <Clock className="h-4 w-4 text-yellow-400" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold text-white">{team.filter(m => m.status === 'Pendiente').length}</div>
+                        <p className="text-xs text-white/40 mt-1">Solicitudes de acceso</p>
+                    </CardContent>
+                </Card>
             </div>
 
             {/* Controls / Filter Bar */}
