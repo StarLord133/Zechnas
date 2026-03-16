@@ -17,13 +17,14 @@ const PasswordSchema = z.object({
 
 type PasswordForm = z.infer<typeof PasswordSchema>;
 
+
 export const AuthAction = () => {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
-    
+
     const mode = searchParams.get("mode");
     const actionCode = searchParams.get("oobCode");
-    
+
     const [email, setEmail] = useState<string | null>(null);
     const [isValidating, setIsValidating] = useState(true);
     const [isInvalidCode, setIsInvalidCode] = useState(false);
@@ -57,7 +58,7 @@ export const AuthAction = () => {
     const onSubmit = async (data: PasswordForm) => {
         setGlobalError(null);
         if (!actionCode) return;
-        
+
         try {
             await confirmPasswordReset(auth, actionCode, data.password);
             setSuccessMsg("Bóveda asegurada. Identidad Criptográfica actualizada con éxito.");
@@ -88,7 +89,7 @@ export const AuthAction = () => {
                 <p className="text-white/40 text-center max-w-sm mb-8">
                     La clave de acción solicitada ya fue consumida, expiró o está malformada. Por protocolos de seguridad, contacte al Admin para generar una nueva firma espacial.
                 </p>
-                <button 
+                <button
                     onClick={() => navigate('/login')}
                     className="border border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10 px-6 py-2 rounded text-sm uppercase font-bold tracking-widest transition-colors"
                 >
