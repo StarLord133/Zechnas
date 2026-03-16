@@ -1,6 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { httpsCallable } from "firebase/functions";
+import { db, cloudFunctions } from "../lib/firebase/config";
+import { doc, updateDoc, collection, query, where, onSnapshot } from "firebase/firestore";
+
 import {
     UserPlus,
     MoreHorizontal,
@@ -15,7 +22,11 @@ import {
     Briefcase,
     Users,
     UserCheck,
-    Clock
+    Clock,
+    Copy,
+    Edit2,
+    Trash2,
+    XCircle
 } from "lucide-react"
 
 import {
@@ -56,6 +67,7 @@ type Status = "Activo" | "Inactivo" | "Pendiente"
 
 interface TeamMember {
     id: string
+    full_uid: string
     name: string
     email: string
     role: Role
@@ -69,74 +81,8 @@ interface TeamMember {
     joinDate?: string
 }
 
-// --- Mock Data ---
-const INITIAL_TEAM: TeamMember[] = [
-    {
-        id: "TM-001",
-        name: "Oswald Zech",
-        email: "oswald@zechnas.com",
-        role: "Admin",
-        department: "Dirección General",
-        status: "Activo",
-        lastActive: "En línea ahora",
-        initials: "OZ",
-        phone: "+52 55 1234 5678",
-        location: "CDMX, México",
-        joinDate: "Enero 2023"
-    },
-    {
-        id: "TM-002",
-        name: "Lucía Méndez",
-        email: "lucia.mendez@zechnas.com",
-        role: "Contador",
-        department: "Finanzas",
-        status: "Activo",
-        lastActive: "Hace 5 min",
-        initials: "LM",
-        phone: "+52 55 9876 5432",
-        location: "Guadalajara, México",
-        joinDate: "Marzo 2023"
-    },
-    {
-        id: "TM-003",
-        name: "Roberto Castro",
-        email: "r.castro@zechnas.com",
-        role: "Auditor",
-        department: "Compliance",
-        status: "Pendiente",
-        lastActive: "Hace 2 días",
-        initials: "RC",
-        phone: "+52 81 1122 3344",
-        location: "Monterrey, México",
-        joinDate: "Diciembre 2023"
-    },
-    {
-        id: "TM-004",
-        name: "Ana Silva",
-        email: "ana.silva@zechnas.com",
-        role: "Gestor",
-        department: "Atención a Clientes",
-        status: "Inactivo",
-        lastActive: "Hace 1 semana",
-        initials: "AS",
-        phone: "+52 55 5555 5555",
-        location: "Remoto",
-        joinDate: "Junio 2023"
-    },
-    {
-        id: "TM-005",
-        name: "Carlos Ruiz",
-        email: "carlos.ruiz@zechnas.com",
-        role: "Contador",
-        department: "Impuestos",
-        status: "Activo",
-        lastActive: "Hace 1 hora",
-        initials: "CR",
-        phone: "+52 55 4433 2211",
-        location: "CDMX, México",
-        joinDate: "Agosto 2023"
-    }
-]
+// --- Initial State ---
+const INITIAL_TEAM: TeamMember[] = [];
 
 // --- Helper Functions ---
 const getRoleBadgeColor = (role: Role) => {
@@ -150,14 +96,90 @@ const getRoleBadgeColor = (role: Role) => {
 
 // --- Sub-components ---
 
-function MemberProfile({ member, onBack, onStatusToggle }: { member: TeamMember, onBack: () => void, onStatusToggle: (id: string) => void }) {
+function MemberProfile({ member, onBack, onStatusToggle }: { member: TeamMember, onBack: () => void, onStatusToggle: (full_uid: string, id: string, currentStatus: Status) => void }) {
+    const [isGeneratingLink, setIsGeneratingLink] = useState(false);
+    const [generatedLink, setGeneratedLink] = useState<string | null>(null);
+
+    // Clients logic
+    const [clients, setClients] = useState<{ id: string, name: string, assignedTo?: string }[]>([]);
+    const [selectedClientId, setSelectedClientId] = useState("");
+    const [isAssigning, setIsAssigning] = useState(false);
+
+    useEffect(() => {
+        // Obtenemos en tiempo real los clientes para que si se asigna se actualice la lista
+        const q = query(collection(db, "users"), where("role", "==", "CLIENT"));
+        const unsub = onSnapshot(q, (snapshot) => {
+            const fetched: {id: string, name: string, assignedTo?: string}[] = [];
+            snapshot.forEach(d => {
+                fetched.push({
+                    id: d.id,
+                    name: d.data().name || d.data().email || "Sin Nombre",
+                    assignedTo: d.data().employee_id
+                });
+            });
+            setClients(fetched);
+            const unbound = fetched.filter(c => c.assignedTo !== member.full_uid);
+            if (unbound.length > 0) setSelectedClientId(unbound[0].id);
+            else setSelectedClientId("");
+        });
+        return () => unsub();
+    }, [member.full_uid]);
+
+    const handleAssign = async () => {
+        if (!selectedClientId) return;
+        setIsAssigning(true);
+        try {
+            await updateDoc(doc(db, "users", selectedClientId), {
+                employee_id: member.full_uid
+            });
+            alert("Cliente vinculado exitosamente a este empleado.");
+        } catch (err: any) {
+            console.error(err);
+            alert("Error vinculando: " + err.message);
+        } finally {
+            setIsAssigning(false);
+        }
+    };
+
+    const handleUnassign = async (clientId: string) => {
+        if(!confirm("¿Retirar cliente de este portafolio?")) return;
+        try {
+            await updateDoc(doc(db, "users", clientId), {
+                employee_id: null
+            });
+        } catch (err: any) {
+            alert("Error al retirar: " + err.message);
+        }
+    };
+
+    const assignedClients = clients.filter(c => c.assignedTo === member.full_uid);
+    const availableClients = clients.filter(c => c.assignedTo !== member.full_uid);
+
+    const handleGenerateLink = async () => {
+        setIsGeneratingLink(true);
+        setGeneratedLink(null);
+        try {
+            const generateFn = httpsCallable<{email: string}, {link: string}>(cloudFunctions, 'generateResetLink');
+            const res = await generateFn({ email: member.email });
+            setGeneratedLink(res.data.link);
+        } catch (e: any) {
+             console.error(e);
+             alert("Error al generar el link: " + e.message);
+        } finally {
+            setIsGeneratingLink(false);
+        }
+    };
+
     return (
         <div className="space-y-6 w-full animate-in fade-in slide-in-from-right-8 duration-500">
             {/* Header / Actions */}
             <div className="flex items-center justify-between">
                 <Button
                     variant="ghost"
-                    onClick={onBack}
+                    onClick={() => {
+                        setGeneratedLink(null);
+                        onBack();
+                    }}
                     className="text-white/60 hover:text-[#D4AF37] hover:bg-white/5 pl-0 gap-2"
                 >
                     <ArrowLeft className="w-5 h-5" />
@@ -166,7 +188,7 @@ function MemberProfile({ member, onBack, onStatusToggle }: { member: TeamMember,
                 <div className="flex gap-2">
                     <Button
                         variant="outline"
-                        onClick={() => onStatusToggle(member.id)}
+                        onClick={() => onStatusToggle(member.full_uid, member.id, member.status)}
                         className={`
                             ${member.status === 'Activo'
                                 ? 'border-red-500/50 text-red-500 hover:bg-red-950/30'
@@ -175,9 +197,48 @@ function MemberProfile({ member, onBack, onStatusToggle }: { member: TeamMember,
                     >
                         {member.status === 'Activo' ? 'Desactivar Cuenta' : 'Activar Cuenta'}
                     </Button>
-                    <Button variant="default" className="bg-[#D4AF37] text-black hover:bg-[#b5952f]">
-                        Editar Perfil
-                    </Button>
+                    <Dialog>
+                        <DialogTrigger asChild>
+                            <Button variant="default" className="bg-[#D4AF37] text-black hover:bg-[#b5952f]">
+                                Editar Perfil
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent className="bg-[#0f0f0f] border-white/10 text-white sm:max-w-md">
+                            <DialogHeader>
+                                <DialogTitle>Editar Perfil</DialogTitle>
+                                <DialogDescription className="text-white/40">Modifica los detalles del empleado.</DialogDescription>
+                            </DialogHeader>
+                            <form 
+                                onSubmit={async (e) => {
+                                    e.preventDefault();
+                                    const formData = new FormData(e.currentTarget);
+                                    const name = formData.get("name") as string;
+                                    const department = formData.get("department") as string;
+                                    try {
+                                        const editFn = httpsCallable<any, any>(cloudFunctions, 'editUserProfile');
+                                        await editFn({ uid: member.id, name, department });
+                                        alert("Perfil actualizado satisfactoriamente.");
+                                    } catch (err: any) {
+                                        console.error(err);
+                                        alert("Error al actualizar: " + err.message);
+                                    }
+                                }} 
+                                className="space-y-4 py-4"
+                            >
+                                <div className="space-y-2">
+                                    <label className="text-xs uppercase font-bold text-white/60">Nombre Completo</label>
+                                    <Input name="name" defaultValue={member.name} className="bg-black border-white/10 focus-visible:ring-[#D4AF37]" required />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs uppercase font-bold text-white/60">Departamento</label>
+                                    <Input name="department" defaultValue={member.department} className="bg-black border-white/10 focus-visible:ring-[#D4AF37]" required />
+                                </div>
+                                <DialogFooter className="mt-6">
+                                    <Button type="submit" className="bg-[#D4AF37] text-black hover:bg-[#b5952f]">Guardar Cambios</Button>
+                                </DialogFooter>
+                            </form>
+                        </DialogContent>
+                    </Dialog>
                 </div>
             </div>
 
@@ -264,6 +325,48 @@ function MemberProfile({ member, onBack, onStatusToggle }: { member: TeamMember,
                                 <span className="text-white/50">Miembro desde</span>
                                 <span className="text-white font-mono">{member.joinDate || "N/A"}</span>
                             </div>
+                            
+                            {/* Panel especial sólo si el usuario es "Pendiente" */}
+                            {member.status === 'Pendiente' && (
+                                <>
+                                    <Separator className="bg-white/5" />
+                                    <div className="pt-2">
+                                        <p className="text-xs text-white/40 mb-3">El usuario no ha establecido su contraseña. Puedes re-generar el enlace de invitación.</p>
+                                        {!generatedLink ? (
+                                            <Button 
+                                                variant="outline" 
+                                                className="w-full border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10"
+                                                onClick={handleGenerateLink}
+                                                disabled={isGeneratingLink}
+                                            >
+                                                {isGeneratingLink ? 'Generando...' : 'Re-Generar Enlace de Acceso'}
+                                            </Button>
+                                        ) : (
+                                            <div className="bg-[#D4AF37]/10 border border-[#D4AF37]/20 p-3 rounded-md space-y-3">
+                                                 <p className="text-xs text-[#D4AF37] font-medium flex items-center gap-1">
+                                                     <CheckCircle2 className="w-3 h-3" /> Link Generado
+                                                 </p>
+                                                 <div className="relative">
+                                                    <Input
+                                                        readOnly
+                                                        value={generatedLink}
+                                                        className="bg-black border-[#D4AF37]/30 text-[10px] pr-10 h-8 font-mono text-[#D4AF37]"
+                                                    />
+                                                    <Button
+                                                        size="icon"
+                                                        variant="ghost"
+                                                        className="absolute right-0 top-0 h-8 w-8 text-[#D4AF37] hover:bg-transparent hover:text-white"
+                                                        onClick={() => navigator.clipboard.writeText(generatedLink)}
+                                                        title="Copiar Link"
+                                                    >
+                                                        <Copy className="h-3 w-3" />
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </>
+                            )}
                         </div>
                     </Card>
 
@@ -295,15 +398,210 @@ function MemberProfile({ member, onBack, onStatusToggle }: { member: TeamMember,
                     </Card>
                 </div>
             </div>
+
+            {/* Asignación de Portafolio (Bóvedas Vinculadas) */}
+            {member.role !== 'Admin' && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+                    {/* Tabla de asignados */}
+                    <Card className="lg:col-span-2 bg-[#0a0a0a] border border-white/10 p-6">
+                        <h3 className="text-white text-sm uppercase tracking-widest font-bold mb-6 flex items-center gap-2">
+                            <Users className="w-4 h-4 text-[#D4AF37]"/> Portafolio Asignado ({assignedClients.length})
+                        </h3>
+                        {assignedClients.length === 0 ? (
+                            <div className="text-center py-8 text-white/30 text-sm">
+                                No tiene cuentas asignadas o bajo su responsabilidad.
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="text-[10px] uppercase text-white/40 border-b border-white/10">
+                                        <tr>
+                                            <th className="pb-3 font-medium">Cliente</th>
+                                            <th className="pb-3 font-medium">Ref ID</th>
+                                            <th className="pb-3 text-right font-medium">Acción</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-white/5">
+                                        {assignedClients.map((client) => (
+                                            <tr key={client.id} className="hover:bg-white/5 transition-colors group">
+                                                <td className="py-3 font-medium text-white">{client.name}</td>
+                                                <td className="py-3 text-white/50 font-mono text-xs">{client.id.substring(0,8).toUpperCase()}</td>
+                                                <td className="py-3 text-right">
+                                                    <Button 
+                                                        variant="ghost" 
+                                                        size="sm"
+                                                        onClick={() => handleUnassign(client.id)}
+                                                        className="h-7 text-xs text-red-400 hover:text-red-300 hover:bg-red-400/10"
+                                                    >
+                                                        Retirar
+                                                    </Button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </Card>
+
+                    {/* Módulo de Asignación */}
+                    <div className="space-y-6">
+                        <Card className="bg-gradient-to-b from-[#0a0a0a] to-[#050505] border border-white/10 p-6">
+                            <h3 className="text-white text-sm uppercase tracking-widest font-bold mb-4 flex items-center gap-2">
+                                <UserPlus className="w-4 h-4 text-[#D4AF37]"/> Vincular Cuenta
+                            </h3>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-[10px] uppercase text-white/50 font-bold mb-1 block">Cliente Disponible</label>
+                                    <select 
+                                        className="w-full bg-black border border-white/10 text-sm text-white rounded p-2 outline-none focus:border-[#D4AF37]"
+                                        value={selectedClientId}
+                                        onChange={e => setSelectedClientId(e.target.value)}
+                                        disabled={availableClients.length === 0}
+                                    >
+                                        {availableClients.length === 0 ? (
+                                            <option value="">No hay clientes libres</option>
+                                        ) : (
+                                            availableClients.map(c => (
+                                                <option key={c.id} value={c.id}>
+                                                    {c.name} {c.assignedTo ? '(Transferir)' : ''}
+                                                </option>
+                                            ))
+                                        )}
+                                    </select>
+                                </div>
+                                <Button 
+                                    className="w-full bg-white/10 hover:bg-[#D4AF37] hover:text-black text-white text-xs uppercase tracking-widest font-bold py-2 transition-colors"
+                                    onClick={handleAssign}
+                                    disabled={isAssigning || !selectedClientId}
+                                >
+                                    {isAssigning ? "Vinculando..." : "Signar a Bóveda"}
+                                </Button>
+                            </div>
+                        </Card>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }
+
+// Zod Schema for Employee
+const EmployeeSchema = z.object({
+    name: z.string().min(3, "El nombre completo es requerido"),
+    email: z.string().email("Correo corporativo inválido"),
+    role: z.enum(["EMPLOYEE", "ADMIN"]),
+    department: z.string().min(2, "Departamento es obligatorio"),
+    phone: z.string().optional()
+});
+
+type EmployeeFormType = z.infer<typeof EmployeeSchema>;
 
 export function TeamManagement() {
     const [team, setTeam] = useState<TeamMember[]>(INITIAL_TEAM)
     const [searchQuery, setSearchQuery] = useState("")
     const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
     const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null)
+
+    useEffect(() => {
+        const q = query(collection(db, "users"), where("role", "in", ["ADMIN", "EMPLOYEE"]));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const fetchedTeam: TeamMember[] = [];
+            snapshot.forEach((docSnap) => {
+                const data = docSnap.data();
+
+                let parsedDate = "N/A";
+                if (data.createdAt) {
+                    if (data.createdAt.seconds) {
+                        parsedDate = new Date(data.createdAt.seconds * 1000).toLocaleDateString('es-MX');
+                    } else if (typeof data.createdAt === 'string') {
+                        parsedDate = new Date(data.createdAt).toLocaleDateString('es-MX');
+                    }
+                }
+
+                // Parse Role exactly to Match TeamMember Type ("Admin" | "Contador" | "Auditor" | "Gestor")
+                let safeRole: Role = "Gestor"; // Default UI fallback
+                if (data.role === "ADMIN") safeRole = "Admin";
+                if (data.role === "EMPLOYEE") {
+                    // We can map department to specific UI roles if needed, or keep Gestor
+                    if (data.department?.toLowerCase().includes("cont")) safeRole = "Contador";
+                    else if (data.department?.toLowerCase().includes("audit")) safeRole = "Auditor";
+                }
+
+                let safeStatus: Status = "Pendiente";
+                if (data.disabled) safeStatus = "Inactivo";
+                else if (data.status) safeStatus = data.status as Status;
+                else if (data.is_active) safeStatus = "Activo";
+
+                fetchedTeam.push({
+                    id: docSnap.id.substring(0, 8).toUpperCase(),
+                    full_uid: docSnap.id,
+                    name: data.name || "Usuario RH",
+                    email: data.email || "Sin Email",
+                    role: safeRole,
+                    department: data.department || "Operaciones",
+                    status: safeStatus,
+                    lastActive: "Reciente",
+                    initials: data.initials || (data.name ? data.name.substring(0, 2).toUpperCase() : "US"),
+                    phone: data.phone,
+                    location: data.location || "Remoto",
+                    joinDate: parsedDate
+                });
+            });
+            setTeam(fetchedTeam);
+        }, (error) => {
+            console.error("Error fetching team realtime:", error);
+        });
+
+        return () => unsubscribe();
+    }, []);
+
+    const [isSubmitting, setIsSubmitting] = useState(false)
+    const [submitResult, setSubmitResult] = useState<{ type: 'success' | 'error', msg: string, link?: string } | null>(null)
+
+    const { register, handleSubmit, formState: { errors }, reset } = useForm<EmployeeFormType>({
+        resolver: zodResolver(EmployeeSchema),
+        defaultValues: { role: "EMPLOYEE" }
+    });
+
+    const onSubmit = async (data: EmployeeFormType) => {
+        setIsSubmitting(true);
+        setSubmitResult(null);
+
+        try {
+            const inviteUserCommand = httpsCallable<{ email: string, role: string }, { resetLink: string, uid: string }>(cloudFunctions, "inviteUser");
+
+            // 1. Invocar Función (Crea User Firebase Auth + Custom Claims + Base DB Doc)
+            const response = await inviteUserCommand({
+                email: data.email,
+                role: data.role
+            });
+
+            // 2. Inyectar Meta-Datos de Recursos Humanos (Firestore 'users')
+            const newUid = response.data.uid;
+            await updateDoc(doc(db, "users", newUid), {
+                name: data.name,
+                department: data.department,
+                phone: data.phone || "",
+                status: "Pendiente",
+                initials: data.name.substring(0, 2).toUpperCase()
+            });
+
+            setSubmitResult({
+                type: 'success',
+                msg: `El usuario (${data.role}) ha sido inyectado en la red con éxito.`,
+                link: response.data.resetLink
+            });
+            reset();
+
+
+        } catch (error: any) {
+            console.error(error);
+            setSubmitResult({ type: 'error', msg: "Fallo crítico en subrutina de creación: " + error.message });
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
 
     // Filter logic
     const filteredTeam = team.filter(member =>
@@ -313,26 +611,30 @@ export function TeamManagement() {
     )
 
     // Actions
-    const handleStatusToggle = (id: string) => {
-        setTeam(team.map(m => {
-            if (m.id === id) {
-                const updated = {
-                    ...m,
-                    status: (m.status === 'Activo' ? 'Inactivo' : 'Activo') as Status
-                }
-                // Also update selected member if it is the one being toggled
-                if (selectedMember?.id === id) {
-                    setSelectedMember(updated)
-                }
-                return updated
+    const handleStatusToggle = async (full_uid: string, id: string, currentStatus: Status) => {
+        try {
+            const toggleFn = httpsCallable<{uid: string, disabled: boolean}, any>(cloudFunctions, 'toggleUserStatus');
+            const newDisabled = currentStatus === 'Activo'; 
+            await toggleFn({ uid: full_uid, disabled: newDisabled });
+            if (selectedMember?.id === id) {
+                 setSelectedMember({ ...selectedMember, status: newDisabled ? 'Inactivo' : 'Activo' });
             }
-            return m
-        }))
+        } catch (e: any) {
+             console.error(e);
+             alert("Error alterando el estado de la cuenta.");
+        }
     }
 
-    const handleDelete = (id: string) => {
-        setTeam(team.filter(m => m.id !== id))
-        if (selectedMember?.id === id) setSelectedMember(null)
+    const handleDelete = async (full_uid: string, id: string) => {
+        if (!confirm("Esta acción destruirá el Vault criptográfico y la cuenta del empleado permanentemente. ¿Proceder?")) return;
+        try {
+             const delFn = httpsCallable<{uid: string}, any>(cloudFunctions, 'deleteUser');
+             await delFn({ uid: full_uid });
+             if (selectedMember?.id === id) setSelectedMember(null);
+        } catch (e: any) {
+             console.error(e);
+             alert("Error al intentar revocar la identidad.");
+        }
     }
 
     if (selectedMember) {
@@ -364,38 +666,84 @@ export function TeamManagement() {
                         <DialogHeader>
                             <DialogTitle>Invitar nuevo miembro</DialogTitle>
                             <DialogDescription className="text-white/40">
-                                Se enviará un correo de invitación con instrucciones de acceso.
+                                Las credenciales de acceso se generarán automáticamente.
                             </DialogDescription>
                         </DialogHeader>
-                        <div className="space-y-4 py-4">
-                            <div className="space-y-2">
-                                <label className="text-xs uppercase font-bold text-white/60">Nombre Completo</label>
-                                <Input placeholder="Ej. Juan Pérez" className="bg-black border-white/10 focus-visible:ring-[#D4AF37]" />
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-xs uppercase font-bold text-white/60">Email Corporativo</label>
-                                <Input placeholder="usuario@zechnas.com" className="bg-black border-white/10 focus-visible:ring-[#D4AF37]" />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <label className="text-xs uppercase font-bold text-white/60">Rol</label>
-                                    <select className="flex h-9 w-full rounded-md border border-white/10 bg-black px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#D4AF37]">
-                                        <option>Contador</option>
-                                        <option>Auditor</option>
-                                        <option>Gestor</option>
-                                        <option>Admin</option>
-                                    </select>
+
+                        {submitResult?.type === 'success' ? (
+                            <div className="bg-[#D4AF37]/10 border border-[#D4AF37]/20 text-[#D4AF37] p-4 rounded-lg text-sm mb-4">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <CheckCircle2 className="w-5 h-5 text-[#D4AF37]" />
+                                    <p className="font-bold">{submitResult.msg}</p>
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs uppercase font-bold text-white/60">Departamento</label>
-                                    <Input placeholder="Ej. Finanzas" className="bg-black border-white/10 focus-visible:ring-[#D4AF37]" />
+                                <div className="bg-black/50 border border-[#D4AF37]/20 rounded-md p-3 relative group">
+                                    <p className="text-[10px] uppercase tracking-widest text-[#D4AF37]/70 font-bold mb-1">Enlace Criptográfico de Establecimiento:</p>
+                                    <div className="flex gap-2 items-center">
+                                       <input 
+                                           readOnly 
+                                           value={submitResult.link}
+                                           className="bg-transparent border-none text-white/90 text-xs w-full focus:outline-none focus:ring-0 truncate font-mono"
+                                       />
+                                       <button 
+                                           onClick={(e) => {
+                                               e.preventDefault();
+                                               navigator.clipboard.writeText(submitResult.link || "");
+                                           }}
+                                           className="p-2 border border-[#D4AF37]/30 bg-[#D4AF37]/10 rounded hover:bg-[#D4AF37]/20 hover:text-white text-[#D4AF37] transition-colors flex-shrink-0"
+                                           title="Copiar Enlace"
+                                       >
+                                            <Copy className="w-4 h-4" />
+                                       </button>
+                                    </div>
+                                    <p className="text-[9px] text-[#D4AF37]/50 mt-2">Cópialo y envíaselo al miembro por un canal seguro.</p>
+                                </div>
+                                <div className="mt-6 flex justify-end">
+                                    <Button type="button" onClick={() => setIsAddDialogOpen(false)} className="bg-[#D4AF37] text-black hover:bg-[#b5952f] font-bold">Cerrar</Button>
                                 </div>
                             </div>
-                        </div>
-                        <DialogFooter>
-                            <Button variant="ghost" onClick={() => setIsAddDialogOpen(false)} className="text-white hover:text-[#D4AF37]">Cancelar</Button>
-                            <Button onClick={() => setIsAddDialogOpen(false)} className="bg-[#D4AF37] text-black hover:bg-[#b5952f]">Enviar Invitación</Button>
-                        </DialogFooter>
+                        ) : (
+                            <>
+                                {submitResult?.type === 'error' && (
+                                    <div className="bg-red-500/10 border border-red-500/20 text-red-500 p-4 rounded-lg text-sm mb-4">
+                                        {submitResult.msg}
+                                    </div>
+                                )}
+
+                                <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-4">
+                                    <div className="space-y-2">
+                                        <label className="text-xs uppercase font-bold text-white/60">Nombre Completo</label>
+                                        <Input {...register("name")} placeholder="Ej. Juan Pérez" className="bg-black border-white/10 focus-visible:ring-[#D4AF37]" />
+                                        {errors.name && <p className="text-red-500 text-xs">{errors.name.message}</p>}
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs uppercase font-bold text-white/60">Email Corporativo</label>
+                                        <Input {...register("email")} type="email" placeholder="usuario@zechnas.com" className="bg-black border-white/10 focus-visible:ring-[#D4AF37]" />
+                                        {errors.email && <p className="text-red-500 text-xs">{errors.email.message}</p>}
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <label className="text-xs uppercase font-bold text-white/60">Rol (Claim)</label>
+                                            <select {...register("role")} className="flex h-9 w-full rounded-md border border-white/10 bg-black px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#D4AF37]">
+                                                <option value="EMPLOYEE">Empleado Operativo</option>
+                                                <option value="ADMIN">Administrador Zechnas</option>
+                                            </select>
+                                            {errors.role && <p className="text-red-500 text-xs">{errors.role.message}</p>}
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs uppercase font-bold text-white/60">Departamento</label>
+                                            <Input {...register("department")} placeholder="Ej. Finanzas" className="bg-black border-white/10 focus-visible:ring-[#D4AF37]" />
+                                            {errors.department && <p className="text-red-500 text-xs">{errors.department.message}</p>}
+                                        </div>
+                                    </div>
+                                    <DialogFooter className="mt-6">
+                                        <Button type="button" variant="ghost" onClick={() => setIsAddDialogOpen(false)} className="text-white hover:text-[#D4AF37]">Cerrar</Button>
+                                        <Button type="submit" disabled={isSubmitting} className="bg-[#D4AF37] text-black hover:bg-[#b5952f] disabled:opacity-50">
+                                            {isSubmitting ? "Ejecutando..." : "Registrar Identidad"}
+                                        </Button>
+                                    </DialogFooter>
+                                </form>
+                            </>
+                        )}
                     </DialogContent>
                 </Dialog>
             </div>
@@ -541,19 +889,21 @@ export function TeamManagement() {
                                                     Ver Perfil Completo
                                                 </DropdownMenuItem>
                                                 <DropdownMenuItem className="focus:bg-white/10 focus:text-white cursor-pointer">
-                                                    Editar Permisos
+                                                    <Edit2 className="w-4 h-4 mr-2" />
+                                                    Editar Perfil
                                                 </DropdownMenuItem>
                                                 <DropdownMenuSeparator className="bg-white/10" />
                                                 <DropdownMenuItem
-                                                    onClick={() => handleStatusToggle(member.id)}
+                                                    onClick={() => handleStatusToggle(member.full_uid, member.id, member.status)}
                                                     className="focus:bg-white/10 focus:text-white cursor-pointer"
                                                 >
-                                                    {member.status === 'Activo' ? 'Desactivar Cuenta' : 'Reactivar Cuenta'}
+                                                    {member.status === 'Activo' ? <><XCircle className="w-4 h-4 mr-2 text-red-400" /> Desactivar Accesos</> : <><CheckCircle2 className="w-4 h-4 mr-2 text-green-400" /> Reactivar Cuenta</>}
                                                 </DropdownMenuItem>
                                                 <DropdownMenuItem
-                                                    onClick={() => handleDelete(member.id)}
+                                                    onClick={() => handleDelete(member.full_uid, member.id)}
                                                     className="text-red-400 focus:bg-red-900/20 focus:text-red-400 cursor-pointer"
                                                 >
+                                                    <Trash2 className="w-4 h-4 mr-2" />
                                                     Eliminar
                                                 </DropdownMenuItem>
                                             </DropdownMenuContent>

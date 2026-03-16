@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
+import { useAuth } from "@/hooks/useAuth"
 import {
     Users,
     UserPlus,
@@ -9,8 +10,12 @@ import {
     TrendingUp,
     AlertCircle,
     DollarSign,
-    MoreHorizontal,
-    FileText
+    FileText,
+    Copy,
+    CheckCircle2,
+    XCircle,
+    Trash2,
+    MoreHorizontal
 } from "lucide-react"
 
 import {
@@ -61,6 +66,7 @@ type Industry = "Tecnología" | "Salud" | "Finanzas" | "Manufactura" | "Retail" 
 
 interface Client {
     id: string
+    full_uid: string
     name: string
     industry: Industry
     status: ClientStatus
@@ -73,43 +79,8 @@ interface Client {
     projectsCount: number
 }
 
-// --- Mock Data Generator ---
-const generateClients = (count: number): Client[] => {
-    const industries: Industry[] = ["Tecnología", "Salud", "Finanzas", "Manufactura", "Retail", "Energía"]
-    const statuses: ClientStatus[] = ["Activo", "Activo", "Activo", "Pendiente", "Inactivo", "Auditoría"]
-    const locations = ["CDMX", "Monterrey", "Guadalajara", "Querétaro", "Mérida", "Tijuana"]
-    const firstNames = ["Tech", "Global", "Inter", "Mex", "Nova", "Alpha", "Prime", "Star", "Blue", "Red"]
-    const lastNames = ["Corp", "Systems", "Solutions", "Industries", "Group", "Holdings", "Logistics", "Energy", "Pharma"]
-
-    // Fixed seed data for first few for consistency
-    const data: Client[] = [
-        { id: "CL-001", name: "TechNova Corp", industry: "Tecnología", status: "Activo", contactName: "Juan Pérez", email: "juan@technova.com", phone: "+52 55 1234 5678", location: "CDMX", annualValue: 1250000, joinDate: "2023-01-15", projectsCount: 3 },
-        { id: "CL-002", name: "MediCare Plus", industry: "Salud", status: "Activo", contactName: "Ana López", email: "ana@medicare.com", phone: "+52 55 8765 4321", location: "Monterrey", annualValue: 850000, joinDate: "2023-03-10", projectsCount: 2 },
-        { id: "CL-003", name: "FinGroup Int", industry: "Finanzas", status: "Auditoría", contactName: "Carlos Ruiz", email: "carlos@fingroup.com", phone: "+52 33 1122 3344", location: "Guadalajara", annualValue: 2100000, joinDate: "2022-11-05", projectsCount: 5 },
-    ]
-
-    for (let i = 4; i <= count; i++) {
-        const industry = industries[Math.floor(Math.random() * industries.length)]
-        const status = statuses[Math.floor(Math.random() * statuses.length)]
-        const name = `${firstNames[Math.floor(Math.random() * firstNames.length)]} ${lastNames[Math.floor(Math.random() * lastNames.length)]} ${Math.floor(Math.random() * 100)}`
-        data.push({
-            id: `CL-${i.toString().padStart(3, '0')}`,
-            name: name,
-            industry: industry,
-            status: status,
-            contactName: `Director ${i}`,
-            email: `contacto@${name.replace(/\s/g, '').toLowerCase()}.com`,
-            phone: `+52 ${Math.floor(Math.random() * 99)} ${Math.floor(Math.random() * 9999)} ${Math.floor(Math.random() * 9999)}`,
-            location: locations[Math.floor(Math.random() * locations.length)],
-            annualValue: Math.floor(Math.random() * 2000000) + 100000,
-            joinDate: `2023-${Math.floor(Math.random() * 12 + 1).toString().padStart(2, '0')}-${Math.floor(Math.random() * 28 + 1).toString().padStart(2, '0')}`,
-            projectsCount: Math.floor(Math.random() * 8) + 1
-        })
-    }
-    return data
-}
-
-const INITIAL_CLIENTS = generateClients(50)
+// --- Initial State ---
+const INITIAL_CLIENTS: Client[] = [];
 
 // --- Helper Functions ---
 const formatCurrency = (value: number) => {
@@ -139,19 +110,83 @@ function ClientProfile({ client, onBack }: { client: Client, onBack: () => void 
         { month: 'Jun', value: 67000 },
     ]
 
+    const [isGeneratingLink, setIsGeneratingLink] = useState(false);
+    const [generatedLink, setGeneratedLink] = useState<string | null>(null);
+
+    const handleGenerateLink = async () => {
+        setIsGeneratingLink(true);
+        setGeneratedLink(null);
+        try {
+            const generateFn = httpsCallable<{email: string}, {link: string}>(cloudFunctions, 'generateResetLink');
+            const res = await generateFn({ email: client.email });
+            setGeneratedLink(res.data.link);
+        } catch (e: any) {
+             console.error(e);
+             alert("Error al generar el link: " + e.message);
+        } finally {
+            setIsGeneratingLink(false);
+        }
+    };
+
     return (
         <div className="space-y-6 w-full animate-in fade-in slide-in-from-right-8 duration-500">
             <div className="flex items-center justify-between">
-                <Button variant="ghost" onClick={onBack} className="text-white/60 hover:text-[#D4AF37] hover:bg-white/5 pl-0 gap-2">
+                <Button 
+                    variant="ghost" 
+                    onClick={() => {
+                        setGeneratedLink(null);
+                        onBack();
+                    }} 
+                    className="text-white/60 hover:text-[#D4AF37] hover:bg-white/5 pl-0 gap-2"
+                >
                     <ArrowLeft className="w-5 h-5" /> Volver al listado
                 </Button>
                 <div className="flex gap-2">
                     <Button variant="outline" className="border-white/10 text-white hover:border-[#D4AF37] hover:text-[#D4AF37]">
                         <FileText className="w-4 h-4 mr-2" /> Reporte Fiscal
                     </Button>
-                    <Button className="bg-[#D4AF37] text-black hover:bg-[#b5952f]">
-                        Editar Cliente
-                    </Button>
+                    <Dialog>
+                        <DialogTrigger asChild>
+                            <Button className="bg-[#D4AF37] text-black hover:bg-[#b5952f]">
+                                Editar Cliente
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent className="bg-[#0f0f0f] border-white/10 text-white sm:max-w-md">
+                            <DialogHeader>
+                                <DialogTitle>Editar Razón Social</DialogTitle>
+                                <DialogDescription className="text-white/40">Modifica los detalles corporativos base.</DialogDescription>
+                            </DialogHeader>
+                            <form 
+                                onSubmit={async (e) => {
+                                    e.preventDefault();
+                                    const formData = new FormData(e.currentTarget);
+                                    const name = formData.get("name") as string;
+                                    const industry = formData.get("industry") as string;
+                                    try {
+                                        const editFn = httpsCallable<any, any>(cloudFunctions, 'editUserProfile');
+                                        await editFn({ uid: client.full_uid, name, department: industry });
+                                        alert("Razón Social / Industria modificada correctamente.");
+                                    } catch (err: any) {
+                                        console.error(err);
+                                        alert("No se pudo modificar: " + err.message);
+                                    }
+                                }} 
+                                className="space-y-4 py-4"
+                            >
+                                <div className="space-y-2">
+                                    <label className="text-xs uppercase font-bold text-white/60">Razón Social</label>
+                                    <Input name="name" defaultValue={client.name} className="bg-black border-white/10 focus-visible:ring-[#D4AF37]" required />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs uppercase font-bold text-white/60">Industria</label>
+                                    <Input name="industry" defaultValue={client.industry} className="bg-black border-white/10 focus-visible:ring-[#D4AF37]" required />
+                                </div>
+                                <DialogFooter className="mt-6">
+                                    <Button type="submit" className="bg-[#D4AF37] text-black hover:bg-[#b5952f]">Guardar Detalles</Button>
+                                </DialogFooter>
+                            </form>
+                        </DialogContent>
+                    </Dialog>
                 </div>
             </div>
 
@@ -237,6 +272,48 @@ function ClientProfile({ client, onBack }: { client: Client, onBack: () => void 
                                 <span className="text-white/50">Proyectos Activos</span>
                                 <Badge className="bg-white/10 text-white hover:bg-white/20">{client.projectsCount}</Badge>
                             </div>
+
+                            {/* Panel especial sólo si el cliente es "Pendiente" */}
+                            {client.status === 'Pendiente' && (
+                                <>
+                                    <Separator className="bg-white/10" />
+                                    <div className="pt-2">
+                                        <p className="text-xs text-white/40 mb-3">El cliente no ha establecido su contraseña. Puedes re-generar el enlace de invitación.</p>
+                                        {!generatedLink ? (
+                                            <Button 
+                                                variant="outline" 
+                                                className="w-full border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10 flex items-center gap-2"
+                                                onClick={handleGenerateLink}
+                                                disabled={isGeneratingLink}
+                                            >
+                                                {isGeneratingLink ? 'Generando...' : 'Re-Generar Enlace de Acceso'}
+                                            </Button>
+                                        ) : (
+                                            <div className="bg-[#D4AF37]/10 border border-[#D4AF37]/20 p-3 rounded-md space-y-3">
+                                                 <p className="text-xs text-[#D4AF37] font-medium flex items-center gap-1">
+                                                     <CheckCircle2 className="w-3 h-3" /> Enlace Generado
+                                                 </p>
+                                                 <div className="relative">
+                                                    <Input
+                                                        readOnly
+                                                        value={generatedLink}
+                                                        className="bg-black border-[#D4AF37]/30 text-[10px] pr-10 h-8 font-mono text-[#D4AF37]"
+                                                    />
+                                                    <Button
+                                                        size="icon"
+                                                        variant="ghost"
+                                                        className="absolute right-0 top-0 h-8 w-8 text-[#D4AF37] hover:bg-transparent hover:text-white"
+                                                        onClick={() => navigator.clipboard.writeText(generatedLink)}
+                                                        title="Copiar Enlace"
+                                                    >
+                                                        <Copy className="h-3 w-3" />
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </>
+                            )}
                         </div>
                     </Card>
 
@@ -257,11 +334,130 @@ function ClientProfile({ client, onBack }: { client: Client, onBack: () => void 
     )
 }
 
+// Zod Schema for Client
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { httpsCallable } from "firebase/functions";
+import { db, cloudFunctions } from "../lib/firebase/config";
+import { doc, updateDoc, collection, query, where, onSnapshot } from "firebase/firestore";
+
+const ClientSchema = z.object({
+    name: z.string().min(2, "Razón Social es requerida"),
+    rfc: z.string().min(12, "RFC Inválido").max(13, "RFC Inválido"),
+    industry: z.enum(["Tecnología", "Finanzas", "Salud"]),
+    contactName: z.string().min(2, "Contacto Principal requerido"),
+    email: z.string().email("Correo de acceso requerido para Firebase Auth")
+});
+
+type ClientFormType = z.infer<typeof ClientSchema>;
+
 export function ClientManagement() {
-    const [clients] = useState<Client[]>(INITIAL_CLIENTS)
+    const [clients, setClients] = useState<Client[]>(INITIAL_CLIENTS)
     const [searchQuery, setSearchQuery] = useState("")
     const [selectedClient, setSelectedClient] = useState<Client | null>(null)
     const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+
+    const { appUser, firebaseUser } = useAuth()
+
+    useEffect(() => {
+        if (!firebaseUser) return;
+        
+        let q = query(collection(db, "users"), where("role", "==", "CLIENT"));
+        if (appUser?.role === "EMPLOYEE") {
+            q = query(collection(db, "users"), where("role", "==", "CLIENT"), where("employee_id", "==", firebaseUser.uid));
+        }
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const fetchedClients: Client[] = [];
+            snapshot.forEach((docSnap) => {
+                const data = docSnap.data();
+
+                let parsedDate = "Reciente";
+                if (data.createdAt) {
+                    if (data.createdAt.seconds) {
+                        parsedDate = new Date(data.createdAt.seconds * 1000).toLocaleDateString('es-MX');
+                    } else if (typeof data.createdAt === 'string') {
+                        parsedDate = new Date(data.createdAt).toLocaleDateString('es-MX');
+                    }
+                }
+
+                // Parse Status correctly avoiding visual bugs
+                let safeStatus: ClientStatus = "Pendiente";
+                if (data.disabled) safeStatus = "Inactivo";
+                else if (data.status) safeStatus = data.status as ClientStatus;
+
+                fetchedClients.push({
+                    id: docSnap.id.substring(0, 8).toUpperCase(),
+                    full_uid: docSnap.id, // we injection the true uid to manage identities
+                    name: data.name || "Sin Razón Social",
+                    industry: data.industry || "Tecnología",
+                    status: safeStatus,
+                    contactName: data.contactName || "Sin contacto",
+                    email: data.email || "Sin email",
+                    phone: data.phone || "No registrado",
+                    location: data.location || "Remoto",
+                    annualValue: data.annualValue || 0,
+                    joinDate: parsedDate,
+                    projectsCount: data.projectsCount || 0
+                });
+            });
+            setClients(fetchedClients);
+        }, (error) => {
+            console.error("Error fetching clients realtime:", error);
+        });
+
+        return () => unsubscribe();
+    }, []);
+
+    const [isSubmitting, setIsSubmitting] = useState(false)
+    const [submitResult, setSubmitResult] = useState<{ type: 'success' | 'error', msg: string, link?: string } | null>(null)
+
+    const { register, handleSubmit, formState: { errors }, reset } = useForm<ClientFormType>({
+        resolver: zodResolver(ClientSchema)
+    });
+
+    const onSubmit = async (data: ClientFormType) => {
+        setIsSubmitting(true);
+        setSubmitResult(null);
+
+        try {
+            const inviteUserCommand = httpsCallable<{ email: string, role: string, client_type: string }, { resetLink: string, uid: string }>(cloudFunctions, "inviteUser");
+
+            // 1. Inyectamos en Auth
+            const response = await inviteUserCommand({
+                email: data.email,
+                role: "CLIENT",
+                client_type: data.rfc.length === 12 ? "BUSINESS" : "INDIVIDUAL"
+            });
+
+            const newUid = response.data.uid;
+
+            // 2. Inyectamos Metadatos de Negocio
+            await updateDoc(doc(db, "users", newUid), {
+                name: data.name,
+                rfc: data.rfc,
+                industry: data.industry,
+                contactName: data.contactName,
+                status: "Pendiente"
+            });
+
+            setSubmitResult({
+                type: 'success',
+                msg: `El Cliente (${data.name}) ha sido inyectado en Vault con éxito.`,
+                link: response.data.resetLink
+            });
+            reset();
+
+
+
+        } catch (error: any) {
+            console.error(error);
+            setSubmitResult({ type: 'error', msg: "Rechazado: " + error.message });
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
 
     // Derived Metrics
     const metrics = useMemo(() => {
@@ -305,48 +501,108 @@ export function ClientManagement() {
                     <h2 className="text-2xl font-bold text-white">Cartera de Clientes</h2>
                     <p className="text-white/40 text-sm">Gestión integral, KPIs y análisis de rendimiento.</p>
                 </div>
-                <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-                    <DialogTrigger asChild>
-                        <Button className="bg-[#D4AF37] text-black hover:bg-[#b5952f] font-bold">
-                            <UserPlus className="w-4 h-4 mr-2" />
-                            Nuevo Cliente
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent className="bg-[#0f0f0f] border-white/10 text-white">
-                        <DialogHeader>
-                            <DialogTitle>Registrar Nuevo Cliente</DialogTitle>
-                            <DialogDescription className="text-white/40">Ingrese los datos fiscales y de contacto.</DialogDescription>
-                        </DialogHeader>
-                        <div className="grid gap-4 py-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-white/50">Razón Social</label>
-                                    <Input className="bg-black border-white/10" placeholder="Nombre de la empresa" />
+                {appUser?.role !== 'EMPLOYEE' && (
+                    <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+                        <DialogTrigger asChild>
+                            <Button className="bg-[#D4AF37] text-black hover:bg-[#b5952f] font-bold">
+                                <UserPlus className="w-4 h-4 mr-2" />
+                                Nuevo Cliente
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent className="bg-[#0f0f0f] border-white/10 text-white sm:max-w-xl">
+                            <DialogHeader>
+                                <DialogTitle>Registrar Nuevo Cliente</DialogTitle>
+                                <DialogDescription className="text-white/40">Ingrese los datos fiscales y de contacto para crear la cuenta y Vault criptográfico del cliente.</DialogDescription>
+                            </DialogHeader>
+
+                            {submitResult?.type === 'success' ? (
+                                <div className="bg-[#D4AF37]/10 border border-[#D4AF37]/20 text-[#D4AF37] p-4 rounded-lg text-sm mb-4">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <CheckCircle2 className="w-5 h-5 text-[#D4AF37]" />
+                                        <p className="font-bold">{submitResult.msg}</p>
+                                    </div>
+                                    <div className="bg-black/50 border border-[#D4AF37]/20 rounded-md p-3 relative group">
+                                        <p className="text-[10px] uppercase tracking-widest text-[#D4AF37]/70 font-bold mb-1">Enlace de Activación Criptográfico</p>
+                                        <div className="flex gap-2 items-center">
+                                           <input 
+                                               readOnly 
+                                               value={submitResult.link}
+                                               className="bg-transparent border-none text-white/90 text-xs w-full focus:outline-none focus:ring-0 truncate font-mono"
+                                           />
+                                           <button 
+                                               onClick={(e) => {
+                                                   e.preventDefault();
+                                                   navigator.clipboard.writeText(submitResult.link || "");
+                                               }}
+                                               className="p-2 border border-[#D4AF37]/30 bg-[#D4AF37]/10 rounded hover:bg-[#D4AF37]/20 hover:text-white text-[#D4AF37] transition-colors flex-shrink-0"
+                                               title="Copiar Enlace"
+                                           >
+                                                <Copy className="w-4 h-4" />
+                                           </button>
+                                        </div>
+                                        <p className="text-[9px] text-[#D4AF37]/50 mt-2">Cópialo y envíaselo al cliente por un canal seguro para que establezca su bóveda.</p>
+                                    </div>
+                                    <div className="mt-6 flex justify-end">
+                                        <Button type="button" onClick={() => setIsAddDialogOpen(false)} className="bg-[#D4AF37] text-black hover:bg-[#b5952f] font-bold">Cerrar</Button>
+                                    </div>
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-white/50">RFC</label>
-                                    <Input className="bg-black border-white/10" placeholder="XAXX010101000" />
-                                </div>
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold text-white/50">Industria</label>
-                                <select className="flex h-9 w-full rounded-md border border-white/10 bg-black px-3 py-1 text-sm text-white shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#D4AF37]">
-                                    <option>Tecnología</option>
-                                    <option>Finanzas</option>
-                                    <option>Salud</option>
-                                </select>
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold text-white/50">Contacto Principal</label>
-                                <Input className="bg-black border-white/10" placeholder="Nombre completo" />
-                            </div>
-                        </div>
-                        <DialogFooter>
-                            <Button variant="ghost" onClick={() => setIsAddDialogOpen(false)} className="text-white hover:text-[#D4AF37]">Cancelar</Button>
-                            <Button onClick={() => setIsAddDialogOpen(false)} className="bg-[#D4AF37] text-black hover:bg-[#b5952f]">Registrar</Button>
-                        </DialogFooter>
-                    </DialogContent>
-                </Dialog>
+                            ) : (
+                                <>
+                                    {submitResult?.type === 'error' && (
+                                        <div className="bg-red-500/10 border border-red-500/20 text-red-500 p-4 rounded-lg text-sm mb-4">
+                                            {submitResult.msg}
+                                        </div>
+                                    )}
+
+                                    <form onSubmit={handleSubmit(onSubmit)} className="grid gap-4 py-4">
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-2">
+                                                <label className="text-xs font-bold text-white/50">Razón Social</label>
+                                                <Input {...register("name")} className="bg-black border-white/10 focus-visible:ring-[#D4AF37]" placeholder="Nombre de la empresa" />
+                                                {errors.name && <p className="text-red-500 text-xs">{errors.name.message}</p>}
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-xs font-bold text-white/50">RFC</label>
+                                                <Input {...register("rfc")} className="bg-black border-white/10 focus-visible:ring-[#D4AF37]" placeholder="XAXX010101000" />
+                                                {errors.rfc && <p className="text-red-500 text-xs">{errors.rfc.message}</p>}
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-2">
+                                                <label className="text-xs font-bold text-white/50">Correo Electrónico (Para Acceso)</label>
+                                                <Input {...register("email")} type="email" className="bg-black border-white/10 focus-visible:ring-[#D4AF37]" placeholder="admin@empresa.com" />
+                                                {errors.email && <p className="text-red-500 text-xs">{errors.email.message}</p>}
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-xs font-bold text-white/50">Industria</label>
+                                                <select {...register("industry")} className="flex h-9 w-full rounded-md border border-white/10 bg-black px-3 py-1 text-sm text-white shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#D4AF37]">
+                                                    <option value="Tecnología">Tecnología</option>
+                                                    <option value="Finanzas">Finanzas</option>
+                                                    <option value="Salud">Salud</option>
+                                                </select>
+                                                {errors.industry && <p className="text-red-500 text-xs">{errors.industry.message}</p>}
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-white/50">Contacto Principal (Nombre)</label>
+                                            <Input {...register("contactName")} className="bg-black border-white/10 focus-visible:ring-[#D4AF37]" placeholder="Nombre completo" />
+                                            {errors.contactName && <p className="text-red-500 text-xs">{errors.contactName.message}</p>}
+                                        </div>
+
+                                        <DialogFooter className="mt-4">
+                                            <Button type="button" variant="ghost" onClick={() => setIsAddDialogOpen(false)} className="text-white hover:text-[#D4AF37]">Cerrar</Button>
+                                            <Button type="submit" disabled={isSubmitting} className="bg-[#D4AF37] text-black hover:bg-[#b5952f] disabled:opacity-50">
+                                                {isSubmitting ? "Ejecutando..." : "Crear Identidad y Vault"}
+                                            </Button>
+                                        </DialogFooter>
+                                    </form>
+                                </>
+                            )}
+                        </DialogContent>
+                    </Dialog>
+                )}
             </div>
 
             {/* KPI Cards */}
@@ -455,15 +711,45 @@ export function ClientManagement() {
                                                     </DropdownMenuTrigger>
                                                     <DropdownMenuContent align="end" className="bg-[#0f0f0f] border-white/10 text-white">
                                                         <DropdownMenuItem onClick={() => setSelectedClient(client)} className="focus:bg-white/10 focus:text-white cursor-pointer">
+                                                            <FileText className="w-4 h-4 mr-2" />
                                                             Ver Perfil Completo
                                                         </DropdownMenuItem>
-                                                        <DropdownMenuItem className="focus:bg-white/10 focus:text-white cursor-pointer">
-                                                            Historial de Pagos
-                                                        </DropdownMenuItem>
-                                                        <DropdownMenuSeparator className="bg-white/10" />
-                                                        <DropdownMenuItem className="text-red-400 focus:bg-red-900/20 focus:text-red-400 cursor-pointer">
-                                                            Archivar Cliente
-                                                        </DropdownMenuItem>
+                                                        {appUser?.role !== 'EMPLOYEE' && (
+                                                            <>
+                                                                <DropdownMenuSeparator className="bg-white/10" />
+                                                                <DropdownMenuItem 
+                                                                    className="focus:bg-white/10 focus:text-white cursor-pointer"
+                                                                    onClick={async (e) => {
+                                                                        e.stopPropagation()
+                                                                        try {
+                                                                            const toggleFn = httpsCallable<{uid: string, disabled: boolean}, any>(cloudFunctions, 'toggleUserStatus');
+                                                                            await toggleFn({ uid: client.full_uid, disabled: client.status !== 'Inactivo' });
+                                                                        } catch(err) {
+                                                                            console.error(err);
+                                                                            alert("Error alterando servicios.");
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    {client.status === 'Inactivo' ? <><CheckCircle2 className="w-4 h-4 mr-2 text-green-400" /> Reactivar Acceso</> : <><XCircle className="w-4 h-4 mr-2 text-yellow-400" /> Suspender Cliente</>}
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuItem 
+                                                                    onClick={async (e) => {
+                                                                         e.stopPropagation();
+                                                                         if(!confirm(`Esta acción eliminará TODO TIPO de dato fiscal e identidad del cliente ${client.name}. Es irreversible. ¿Proceder?`)) return;
+                                                                         try {
+                                                                             const delFn = httpsCallable<{uid: string}, any>(cloudFunctions, 'deleteUser');
+                                                                             await delFn({ uid: client.full_uid });
+                                                                         } catch (err) {
+                                                                             alert("Fallo crítico en purga.");
+                                                                         }
+                                                                    }}
+                                                                    className="text-red-400 focus:bg-red-900/20 focus:text-red-400 cursor-pointer"
+                                                                >
+                                                                    <Trash2 className="w-4 h-4 mr-2" />
+                                                                    Purga de Cliente
+                                                                </DropdownMenuItem>
+                                                            </>
+                                                        )}
                                                     </DropdownMenuContent>
                                                 </DropdownMenu>
                                             </TableCell>

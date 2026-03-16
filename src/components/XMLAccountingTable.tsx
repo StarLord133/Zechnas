@@ -208,57 +208,8 @@ function InvoiceDetail({ invoice, onBack }: { invoice: InvoiceData, onBack: () =
     )
 }
 
-// --- Mock Invoice Generator ---
-const generateRandomInvoices = (count: number): InvoiceData[] => {
-    const issuers = [
-        { name: "OFFICE DEPOT DE MEXICO", rfc: "ODM950324V2A" },
-        { name: "TELEFONOS DE MEXICO", rfc: "TME840315KT6" },
-        { name: "AMAZON WEB SERVICES", rfc: "AWS120324V1A" },
-        { name: "AEROLINEAS DE MEXICO", rfc: "AME880912I89" },
-        { name: "UBER BV", rfc: "UBR120324V9A" },
-        { name: "STARBUCKS COFFEE", rfc: "SCM020324V5A" }
-    ];
-
-    const concepts = [
-        "PAPELERIA Y ARTICULOS DE OFICINA",
-        "SERVICIOS DE TELECOMUNICACIONES",
-        "SERVICIOS EN LA NUBE AWS",
-        "TRANSPORTE AEREO DE PASAJEROS",
-        "SERVICIO DE TRANSPORTE PRIVADO",
-        "CONSUMO DE ALIMENTOS Y BEBIDAS",
-        "HONORARIOS PROFESIONALES",
-        "MANTENIMIENTO DE EQUIPO DE COMPUTO"
-    ];
-
-    return Array.from({ length: count }).map(() => {
-        const issuer = issuers[Math.floor(Math.random() * issuers.length)];
-        const subtotal = Math.floor(Math.random() * 15000) + 500;
-        const tax = subtotal * 0.16;
-        const total = subtotal + tax;
-
-        // Random date within last 3 months
-        const date = new Date();
-        date.setDate(date.getDate() - Math.floor(Math.random() * 90));
-
-        return {
-            uuid: crypto.randomUUID(),
-            date: date.toISOString().split('T')[0],
-            serie: "F",
-            folio: `${Math.floor(Math.random() * 10000) + 1000}`,
-            rfcEmitter: issuer.rfc,
-            nameEmitter: issuer.name,
-            concept: concepts[Math.floor(Math.random() * concepts.length)],
-            subtotal: subtotal,
-            discount: 0,
-            transferredTax: tax,
-            retainedTax: 0,
-            total: total,
-            rawData: null // No raw XML for mock data
-        };
-    });
-};
-
-const INITIAL_INVOICES = generateRandomInvoices(15);
+// --- Initial State ---
+const INITIAL_INVOICES: InvoiceData[] = [];
 
 export function XMLAccountingTable() {
     const [invoices, setInvoices] = useState<InvoiceData[]>(INITIAL_INVOICES)

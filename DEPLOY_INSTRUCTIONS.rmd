@@ -1,0 +1,70 @@
+---
+title: "Guía de Despliegue Producción: Cloud Functions (Plan Blaze)"
+author: "Antigravity - AI Assistant"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Activación del Entorno Serverless (Firebase Cloud Functions)
+
+Este documento está diseñado como protocolo para la transición del entorno de Desarrollo (Locahost y Firebase Emulators) hacia el entorno Productivo (Google Cloud Platform) una vez que el proyecto haya sido actualizado al **Plan Blaze**.
+
+## 1. Diagnóstico Actual (Por qué necesitas esto)
+
+Actualmente, las Cloud Functions (Específicamente el módulo `inviteUser` que crea cuentas, inyecta Custom Claims `ADMIN`/`EMPLOYEE`/`CLIENT` y proveé los enlaces de recuperación) están **BLOQUEADAS** en el entorno productivo `us-central1-zechnas-79bd2`.
+
+**El síntoma original:** Cuando el front-end intentaba registrar un cliente nuevo, Google devolvía un error de CORS (`Access-Control-Allow-Origin: 404`).
+**La causa real:** Firebase requiere obligatoriamente una cuenta de facturación activa (Plan Blaze) para instanciar el servidor `Node.js v20` en Google Cloud Build. Como estaba en el Plan Spark (Gratis), Google eliminó la petición y el entorno Productivo se quedó sin el código backend.
+
+---
+
+## 2. Procedimiento de Escalada (Para el Desarrollador Humano)
+
+Antes de que cualquier asistente de IA intente desplegar, debes realizar el upgrade manual en el proyecto:
+
+1. Ingresa a la consola de Firebase: `https://console.firebase.google.com/project/zechnas-79bd2/usage/details`
+2. Modifica el plan de "Spark" (Gratis) a **"Blaze" (Pay-as-you-go)**.
+3. Asegúrate que en el panel de Google Cloud Console las APIs de `cloudbuild.googleapis.com` y `artifactregistry.googleapis.com` estén habilitadas (usualmente se habilitan solas al pagar).
+
+---
+
+## 3. Protocolo de Desarme y Despliegue (Para la siguiente IA)
+
+> **⚠️ ATENCIÓN AGENTE DE IA:** Si el usuario confirma que ya actualizó el plan a Blaze, sigue estrictamente estas instrucciones:
+
+### Paso A: Desarmar el Escudo de Desarrollo (Emulador Local)
+
+El Frontend actualmente está forzado a desviar el tráfico de funciones hacia el Emulador Local (`localhost:5001`). Debemos revertir esto para apuntar a producción.
+
+1. Abre el archivo de configuración en `src/lib/firebase/config.ts`.
+2. Ubica las líneas de enrutamiento condicional (Aprox. Línea 23-28):
+   ```typescript
+   // Enrutamiento condicional para Emuladores en Entorno de Desarrollo
+   if (import.meta.env.DEV) {
+       if (window.location.hostname === "localhost") {
+           connectFunctionsEmulator(cloudFunctions, "127.0.0.1", 5001);
+       }
+   }
+   ```
+3. **Elimina ese bloque de código por completo de `config.ts`**. Asegurando que dejes la importación inicial así: `export const cloudFunctions = getFunctions(app, "us-central1");` e imports limpios.
+
+### Paso B: Compilación y Despliegue del Backend
+
+Debes acceder al directorio interno de `functions/`, instalar dependencias compilar TypeScript y hacer push a Google Cloud.
+
+Abre una terminal interactiva y ejecuta:
+```bash
+cd functions/
+npm install
+npm run build
+firebase deploy --only functions
+```
+
+**Verificación Estratégica:**
+- Si el comando arroja `Exit code: 1` con error de Facturación o *Cloud Build API disabled*, el upgrade del entorno por parte del usuario **fracasó**.
+- Si el comando arroja un mensaje de éxito (`Deploy complete!`), el servidor de Node Backend está formalmente vivo.
+
+### Paso C: Finalización
+1. Apaga cualquier servidor de Firebase Emulators corriendo de fondo (`firebase emulators:start`).
+2. Haz build general del frontend (`npm run build`) para validación.
+3. Instruye al usuario a realizar una prueba final en el Dashboard desplegado o `npm run dev` sin emulador temporal.

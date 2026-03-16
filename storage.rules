@@ -1,0 +1,35 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Custom Claims checks
+    function isAdmin() {
+      return request.auth.token.role == 'ADMIN';
+    }
+    function isEmployee() {
+      return request.auth.token.role == 'EMPLOYEE';
+    }
+    function isClient() {
+      return request.auth.token.role == 'CLIENT';
+    }
+
+    match /clients/{clientId}/docs/{year}/{month}/{filename} {
+      // Un admin puede leer todo. Un cliente sólo si el path clientId es su uid.
+      // Un empleado sólo si su uid es igual al 'employee_id' en firestore para el `clientId` de este directorio.
+      allow read: if request.auth != null && (
+        isAdmin() || 
+        (isClient() && clientId == request.auth.uid) || 
+        (isEmployee() && firestore.get(/databases/(default)/documents/users/$(clientId)).data.employee_id == request.auth.uid)
+      );
+
+      // Reglas de Escritura
+      // El nombre del archivo DEBE ser RFC_MES_AÑO_TIPO.pdf / xml
+      allow write: if request.auth != null && 
+        filename.matches('^([A-Z0-9]{12,13})_([0-9]{2})_([0-9]{4})_(FACTURA|ACUSE|REPORTE)\\.(pdf|xml)$') && (
+          isAdmin() || 
+          (isClient() && clientId == request.auth.uid && request.resource.size < 5 * 1024 * 1024) || // 5MB límite cliente
+          (isEmployee() && firestore.get(/databases/(default)/documents/users/$(clientId)).data.employee_id == request.auth.uid)
+        );
+    }
+  }
+}

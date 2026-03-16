@@ -1,0 +1,48 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Auth Helpers
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // We enforce Custom Claims usage because performing `get()` everywhere is expensive
+    // The role must be set in request.auth.token.role
+    function getRole() {
+      return request.auth.token.role;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && getRole() == 'ADMIN';
+    }
+    function isEmployee() {
+      return isAuthenticated() && getRole() == 'EMPLOYEE';
+    }
+    function isClient() {
+      return isAuthenticated() && getRole() == 'CLIENT';
+    }
+
+    // `users` Collection
+    match /users/{userId} {
+      // Admin controls everyone. Employee can read their assigned clients. Client only reads himself.
+      allow read: if isAdmin() || (isClient() && request.auth.uid == userId) || (isEmployee() && resource.data.employee_id == request.auth.uid) || (isEmployee() && request.auth.uid == userId);
+      // Only Admins can invoke write. Clients/Employees use backend functions.
+      allow write: if isAdmin();
+      allow update: if (request.auth.uid == userId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_active', 'status'])) || isAdmin();
+    }
+
+    // `documents_index` Collection (If we index files outside of storage metadata)
+    match /documents_index/{docId} {
+      allow read: if isAdmin() || (isClient() && resource.data.clientId == request.auth.uid) || (isEmployee() && resource.data.employee_id == request.auth.uid);
+      allow write: if isAdmin() || (isEmployee() && resource.data.employee_id == request.auth.uid) || (isClient() && resource.data.clientId == request.auth.uid && request.resource.data.type == "FACTURA");
+    }
+
+    // `audit_logs` Collection
+    match /audit_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
+      allow update, delete: if false; // Immutable logs
+    }
+  }
+}
